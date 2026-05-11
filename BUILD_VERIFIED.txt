@@ -1,0 +1,7 @@
+Build verification performed in this environment:
+
+npm install --ignore-scripts
+npm run build
+
+Result: PASS
+Notes: node_modules and dist were removed before packaging because Netlify will install and build automatically.

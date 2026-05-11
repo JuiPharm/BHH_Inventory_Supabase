@@ -1,0 +1,8 @@
+-- Run files in this order in Supabase SQL Editor:
+-- 01 schema.sql
+-- 02 triggers.sql
+-- 03 views.sql
+-- 04 functions.sql
+-- 05 rls_policies.sql
+-- 06 storage_policies.sql
+-- 07 seed.sql
