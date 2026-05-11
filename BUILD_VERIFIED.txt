@@ -1,7 +1,5 @@
-Build verification performed in this environment:
-
-npm install --ignore-scripts
-npm run build
-
-Result: PASS
-Notes: node_modules and dist were removed before packaging because Netlify will install and build automatically.
+Build fix applied for Netlify.
+- package.json build script uses vite build.
+- package-lock.json is intentionally omitted from the ZIP to avoid registry/lockfile mismatch on Netlify.
+- TypeScript remains available as devDependency for local typecheck.
+Tested in container with npm install --ignore-scripts and npm run build.
