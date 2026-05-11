@@ -1,4 +1,4 @@
--- Run files in this order in Supabase SQL Editor:
+-- Run these files in this order in Supabase SQL Editor:
 -- 01 schema.sql
 -- 02 triggers.sql
 -- 03 views.sql
@@ -6,3 +6,4 @@
 -- 05 rls_policies.sql
 -- 06 storage_policies.sql
 -- 07 seed.sql
+-- Existing installation hotfix only: hotfix_netlify_v1_2.sql

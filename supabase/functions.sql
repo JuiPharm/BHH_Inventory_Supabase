@@ -240,6 +240,7 @@ declare
   v_requested numeric;
   v_remaining numeric;
   v_reason text;
+  v_requester_name text;
   v_lot_filter uuid;
   v_bal record;
   v_take numeric;
@@ -249,8 +250,17 @@ begin
   if p_items is null or jsonb_array_length(p_items) = 0 then raise exception 'Issue items required'; end if;
   perform set_config('app.stock_rpc','on', true);
 
+  if p_issue_to_department_id is null then
+    raise exception 'Issue destination department is required';
+  end if;
+
+  select coalesce(nullif(p_requester_name,''), nullif(p.full_name,''), p.email::text, auth.uid()::text)
+  into v_requester_name
+  from public.profiles p
+  where p.id = auth.uid();
+
   insert into public.issues(issue_no, issue_to_department_id, warehouse_id, requester_name, issue_date, remarks, created_by)
-  values(v_issue_no, p_issue_to_department_id, p_warehouse_id, nullif(p_requester_name,''), coalesce(p_issue_date,current_date), p_remarks, auth.uid())
+  values(v_issue_no, p_issue_to_department_id, p_warehouse_id, v_requester_name, coalesce(p_issue_date,current_date), p_remarks, auth.uid())
   returning id into v_issue_id;
 
   for v_line in select * from jsonb_array_elements(p_items) loop

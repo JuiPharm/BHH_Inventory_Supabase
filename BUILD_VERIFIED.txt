@@ -1,5 +1,12 @@
-Build fix applied for Netlify.
-- package.json build script uses vite build.
-- package-lock.json is intentionally omitted from the ZIP to avoid registry/lockfile mismatch on Netlify.
-- TypeScript remains available as devDependency for local typecheck.
-Tested in container with npm install --ignore-scripts and npm run build.
+BHH Inventory Netlify Complete v1.2 FIXED
+
+Build verification performed in container before removing node_modules/dist:
+- npm install --ignore-scripts
+- npm run build
+
+Result:
+- Vite production build passed.
+
+Important deployment note:
+- package-lock.json is intentionally excluded because this environment writes internal registry URLs into lockfiles.
+- Netlify should install dependencies from package.json directly.

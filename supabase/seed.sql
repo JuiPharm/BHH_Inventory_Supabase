@@ -43,8 +43,11 @@ where r.role_code = 'viewer'
 on conflict do nothing;
 
 insert into public.departments(department_code, department_name) values
-('PHARM','Pharmacy'),('CHEMO','IV Chemo'),('OPD','OPD'),('IPD','IPD')
-on conflict(department_code) do nothing;
+('PHARM','Pharmacy'),
+('CHEMO','IV Chemo'),
+('OPD','OPD Pharmacy'),
+('IPD','IPD Pharmacy')
+on conflict(department_code) do update set department_name=excluded.department_name, is_active=true, updated_at=now();
 
 insert into public.warehouses(warehouse_code, warehouse_name, department_id)
 select 'MAIN','Main Pharmacy Store', id from public.departments where department_code='PHARM'

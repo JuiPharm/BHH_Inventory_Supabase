@@ -190,3 +190,21 @@ VITE_BASE_PATH
 ## Notes
 
 This package is designed as a stable starting production codebase. Before hospital production use, validate RLS with real users, review workflow approval thresholds, and perform user acceptance testing with actual stock scenarios.
+
+## Existing Supabase Project Hotfix v1.2
+
+If your deployed app shows these errors:
+
+```txt
+Could not find the function public.get_dashboard_summary(p_warehouse_id) in the schema cache
+Could not find the function public.calculate_reorder_recommendation(p_warehouse_id) in the schema cache
+column near_expiry_view.days_to_expiry does not exist
+```
+
+Run this SQL in Supabase SQL Editor:
+
+```txt
+supabase/hotfix_netlify_v1_2.sql
+```
+
+This hotfix recreates the dashboard/reorder RPC signatures, recreates `near_expiry_view` with `days_to_expiry`, seeds OPD Pharmacy/IPD Pharmacy/IV Chemo departments, and reloads the Supabase/PostgREST schema cache.

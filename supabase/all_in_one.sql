@@ -1,8 +1,3 @@
-
-
--- =========================================================
--- schema.sql
--- =========================================================
 -- BHH Inventory Management System
 -- 01 schema.sql
 -- Run in Supabase SQL Editor before triggers/functions/RLS.
@@ -389,9 +384,6 @@ create index if not exists idx_issues_date on public.issues(issue_date desc);
 create index if not exists idx_audit_changed_at on public.audit_logs(changed_at desc);
 
 
--- =========================================================
--- triggers.sql
--- =========================================================
 -- 02 triggers.sql
 create or replace function public.set_updated_at()
 returns trigger
@@ -515,9 +507,6 @@ drop trigger if exists trg_stock_balances_protect on public.stock_balances;
 create trigger trg_stock_balances_protect before insert or update or delete on public.stock_balances for each row execute function public.protect_stock_balances_direct_write();
 
 
--- =========================================================
--- views.sql
--- =========================================================
 -- 03 views.sql
 create or replace view public.current_stock_view with (security_invoker = true) as
 select
@@ -589,9 +578,6 @@ join public.warehouses w on w.id = st.warehouse_id
 left join public.stock_lots sl on sl.id = st.lot_id;
 
 
--- =========================================================
--- functions.sql
--- =========================================================
 -- 04 functions.sql
 
 create or replace function public.current_role_code()
@@ -834,6 +820,7 @@ declare
   v_requested numeric;
   v_remaining numeric;
   v_reason text;
+  v_requester_name text;
   v_lot_filter uuid;
   v_bal record;
   v_take numeric;
@@ -843,8 +830,17 @@ begin
   if p_items is null or jsonb_array_length(p_items) = 0 then raise exception 'Issue items required'; end if;
   perform set_config('app.stock_rpc','on', true);
 
+  if p_issue_to_department_id is null then
+    raise exception 'Issue destination department is required';
+  end if;
+
+  select coalesce(nullif(p_requester_name,''), nullif(p.full_name,''), p.email::text, auth.uid()::text)
+  into v_requester_name
+  from public.profiles p
+  where p.id = auth.uid();
+
   insert into public.issues(issue_no, issue_to_department_id, warehouse_id, requester_name, issue_date, remarks, created_by)
-  values(v_issue_no, p_issue_to_department_id, p_warehouse_id, nullif(p_requester_name,''), coalesce(p_issue_date,current_date), p_remarks, auth.uid())
+  values(v_issue_no, p_issue_to_department_id, p_warehouse_id, v_requester_name, coalesce(p_issue_date,current_date), p_remarks, auth.uid())
   returning id into v_issue_id;
 
   for v_line in select * from jsonb_array_elements(p_items) loop
@@ -1077,9 +1073,6 @@ grant execute on function public.get_stock_card(uuid, uuid, date, date) to authe
 grant execute on function public.calculate_reorder_recommendation(uuid) to authenticated;
 
 
--- =========================================================
--- rls_policies.sql
--- =========================================================
 -- 05 rls_policies.sql
 -- Security must be enforced in database; hiding buttons in frontend is not enough.
 
@@ -1206,9 +1199,6 @@ create policy notifications_read on public.notifications for select to authentic
 create policy notifications_update_own on public.notifications for update to authenticated using (target_user = auth.uid()) with check (target_user = auth.uid());
 
 
--- =========================================================
--- storage_policies.sql
--- =========================================================
 -- 06 storage_policies.sql
 -- Create bucket for item images.
 insert into storage.buckets (id, name, public)
@@ -1232,9 +1222,6 @@ using (bucket_id = 'item-images' and public.current_role_code() in ('super_admin
 with check (bucket_id = 'item-images' and public.current_role_code() in ('super_admin','inventory_manager'));
 
 
--- =========================================================
--- seed.sql
--- =========================================================
 -- 07 seed.sql
 insert into public.roles(role_code, role_name, description) values
 ('super_admin','Super Admin','Full access'),
@@ -1280,8 +1267,11 @@ where r.role_code = 'viewer'
 on conflict do nothing;
 
 insert into public.departments(department_code, department_name) values
-('PHARM','Pharmacy'),('CHEMO','IV Chemo'),('OPD','OPD'),('IPD','IPD')
-on conflict(department_code) do nothing;
+('PHARM','Pharmacy'),
+('CHEMO','IV Chemo'),
+('OPD','OPD Pharmacy'),
+('IPD','IPD Pharmacy')
+on conflict(department_code) do update set department_name=excluded.department_name, is_active=true, updated_at=now();
 
 insert into public.warehouses(warehouse_code, warehouse_name, department_id)
 select 'MAIN','Main Pharmacy Store', id from public.departments where department_code='PHARM'
@@ -1315,3 +1305,6 @@ on conflict(key) do update set value=excluded.value, description=excluded.descri
 -- insert into public.user_warehouse_access(user_id, warehouse_id, can_receive, can_issue, can_adjust, can_transfer)
 -- select id, (select id from public.warehouses where warehouse_code='MAIN'), true, true, true, true from public.profiles where email='your-admin-email@hospital.com'
 -- on conflict do nothing;
+
+
+notify pgrst, 'reload schema';
