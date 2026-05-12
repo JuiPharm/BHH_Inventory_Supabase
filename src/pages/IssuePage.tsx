@@ -10,11 +10,60 @@ import { readableError } from '../utils/errors'
 
 type Line = IssueItemInput & { item?: ItemSearchResult | null }
 
+const ISSUE_DESTINATIONS: Array<{ code: 'OPD' | 'IPD' | 'CHEMO'; name: string }> = [
+  { code: 'OPD', name: 'OPD Pharmacy' },
+  { code: 'IPD', name: 'IPD Pharmacy' },
+  { code: 'CHEMO', name: 'IV Chemo' }
+]
+
+const DESTINATION_NAME_TO_CODE: Record<string, 'OPD' | 'IPD' | 'CHEMO'> = {
+  'opd pharmacy': 'OPD',
+  'ipd pharmacy': 'IPD',
+  'iv chemo': 'CHEMO'
+}
+
+function normalize(value: string | null | undefined) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function normalizeIssueDestinations(rows: Department[]) {
+  const byCode = new Map<'OPD' | 'IPD' | 'CHEMO', Department>()
+
+  for (const row of rows) {
+    const normalizedCode = String(row.department_code || '').trim().toUpperCase()
+    const normalizedName = normalize(row.department_name)
+    const matchedCode = ISSUE_DESTINATIONS.some(d => d.code === normalizedCode)
+      ? normalizedCode as 'OPD' | 'IPD' | 'CHEMO'
+      : DESTINATION_NAME_TO_CODE[normalizedName]
+
+    if (!matchedCode) continue
+
+    const displayName = ISSUE_DESTINATIONS.find(d => d.code === matchedCode)?.name || row.department_name
+    const previous = byCode.get(matchedCode)
+    const exactCodeMatch = normalizedCode === matchedCode
+
+    // Prefer the canonical row whose department_code is exactly OPD/IPD/CHEMO.
+    // This prevents duplicated names from legacy seed/hotfix data appearing in the dropdown.
+    if (!previous || exactCodeMatch) {
+      byCode.set(matchedCode, {
+        ...row,
+        department_code: matchedCode,
+        department_name: displayName
+      })
+    }
+  }
+
+  return ISSUE_DESTINATIONS
+    .map(destination => byCode.get(destination.code))
+    .filter((row): row is Department => Boolean(row))
+}
+
 export function IssuePage() {
   const { selectedWarehouseId, profile } = useAuth()
   const { pushToast } = useToast()
-  const requester = useMemo(() => profile?.full_name || profile?.email || 'Current login user', [profile])
+  const requester = useMemo(() => profile?.full_name || profile?.email || profile?.id || 'Current login user', [profile])
   const [departments, setDepartments] = useState<Department[]>([])
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
   const [departmentId, setDepartmentId] = useState('')
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
@@ -23,19 +72,27 @@ export function IssuePage() {
 
   useEffect(() => {
     let mounted = true
+    setLoadingDepartments(true)
     supabase
       .from('departments')
       .select('id, department_code, department_name, is_active')
       .eq('is_active', true)
-      .order('department_name')
+      .order('department_code', { ascending: true })
       .then(({ data, error }) => {
         if (!mounted) return
         if (error) throw error
-        setDepartments((data || []) as Department[])
+        const cleanDestinations = normalizeIssueDestinations((data || []) as Department[])
+        setDepartments(cleanDestinations)
+        if (departmentId && !cleanDestinations.some(d => d.id === departmentId)) {
+          setDepartmentId('')
+        }
       })
       .catch(error => pushToast(readableError(error), 'error'))
+      .finally(() => {
+        if (mounted) setLoadingDepartments(false)
+      })
     return () => { mounted = false }
-  }, [pushToast])
+  }, [departmentId, pushToast])
 
   function addLine() {
     if (!line.item_id || line.qty <= 0) {
@@ -68,7 +125,8 @@ export function IssuePage() {
       await rpcIssueStock({
         warehouse_id: selectedWarehouseId,
         issue_to_department_id: departmentId,
-        requester_name: requester,
+        // Do not trust editable frontend text for requester. The RPC records auth.uid()/profile.
+        requester_name: null,
         remarks,
         items
       })
@@ -90,14 +148,18 @@ export function IssuePage() {
         <div className="form-grid">
           <label>
             Issue to department
-            <select value={departmentId} onChange={e => setDepartmentId(e.target.value)}>
-              <option value="">เลือกหน่วยงานปลายทาง</option>
-              {departments.map(d => <option key={d.id} value={d.id}>{d.department_name}</option>)}
+            <select
+              value={departmentId}
+              onChange={e => setDepartmentId(e.target.value)}
+              disabled={loadingDepartments}
+            >
+              <option value="">{loadingDepartments ? 'กำลังโหลดหน่วยงาน...' : 'เลือกหน่วยงานปลายทาง'}</option>
+              {departments.map(d => <option key={d.department_code} value={d.id}>{d.department_name}</option>)}
             </select>
           </label>
           <label>
             Requester
-            <input value={requester} disabled title="Requester อ้างอิงจากผู้ Login ปัจจุบัน" />
+            <input value={requester} disabled title="Requester อ้างอิงจากผู้ Login ปัจจุบันและบันทึกจาก Supabase Auth" />
           </label>
           <label>
             Remarks
@@ -110,7 +172,7 @@ export function IssuePage() {
           <input placeholder="Reason" value={line.reason || ''} onChange={e => setLine({ ...line, reason: e.target.value })} />
           <button className="btn secondary" onClick={addLine}>Add</button>
         </div>
-        <p className="hint">ระบบจะเลือก lot ด้วย FEFO จาก RPC โดยอัตโนมัติถ้าไม่ระบุ lot_id และ Requester จะอ้างอิงจากรหัส Login ปัจจุบัน</p>
+        <p className="hint">Dropdown แสดงเฉพาะ OPD Pharmacy, IPD Pharmacy และ IV Chemo โดยตัดรายการซ้ำอัตโนมัติ ส่วน Requester จะบันทึกจาก Supabase Auth Login ผ่าน RPC</p>
       </section>
 
       <section className="panel">

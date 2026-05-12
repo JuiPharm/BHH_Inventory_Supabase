@@ -1,12 +1,145 @@
--- BHH Inventory Netlify Hotfix v1.2
+-- BHH Inventory Netlify Hotfix v1.2c
 -- Fixes:
 -- 1) RPC schema mismatch: get_dashboard_summary(p_warehouse_id), calculate_reorder_recommendation(p_warehouse_id)
 -- 2) near_expiry_view.days_to_expiry missing
 -- 3) Issue destination departments: OPD Pharmacy, IPD Pharmacy, IV Chemo
 -- 4) Requester name defaults to current login profile/email
+-- 5) FIX: drop existing views before recreating them to avoid column rename error
+-- 6) FIX: include required helper functions before they are called
 
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
+
+
+-- Required helper functions.
+-- This block is intentionally included in the hotfix because some existing databases
+-- may not have run the original functions.sql before this patch.
+create or replace function public.current_role_code()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select r.role_code
+  from public.profiles p
+  join public.roles r on r.id = p.role_id
+  where p.id = auth.uid() and p.is_active = true
+  limit 1;
+$$;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.current_role_code() in ('super_admin','inventory_manager'), false);
+$$;
+
+create or replace function public.is_readonly_role()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.current_role_code() in ('viewer','auditor'), false);
+$$;
+
+create or replace function public.user_has_warehouse(p_warehouse_id uuid, p_action text default 'read')
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.is_admin(), false)
+    or exists (
+      select 1
+      from public.user_warehouse_access uwa
+      where uwa.user_id = auth.uid()
+        and uwa.warehouse_id = p_warehouse_id
+        and case p_action
+          when 'receive' then uwa.can_receive
+          when 'issue' then uwa.can_issue
+          when 'adjust' then uwa.can_adjust
+          when 'transfer' then uwa.can_transfer
+          else true
+        end
+    )
+    or exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.default_warehouse_id = p_warehouse_id
+        and p.is_active = true
+    );
+$$;
+
+create or replace function public.assert_active_user()
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Login required';
+  end if;
+
+  if not exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and is_active = true
+  ) then
+    raise exception 'User is inactive or profile is missing';
+  end if;
+end;
+$$;
+
+create or replace function public.assert_warehouse_permission(p_warehouse_id uuid, p_action text)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  perform public.assert_active_user();
+
+  if public.is_readonly_role() then
+    raise exception 'Read-only role cannot perform this action';
+  end if;
+
+  if p_warehouse_id is null then
+    raise exception 'Warehouse is required';
+  end if;
+
+  if not public.user_has_warehouse(p_warehouse_id, p_action) then
+    raise exception 'Unauthorized warehouse access';
+  end if;
+end;
+$$;
+
+create or replace function public.gen_doc_no(p_prefix text)
+returns text
+language sql
+volatile
+as $$
+  select p_prefix || to_char(now(), 'YYYYMMDDHH24MISS') || '-' || lpad((floor(random()*10000))::text, 4, '0');
+$$;
+
+grant execute on function public.current_role_code() to authenticated;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_readonly_role() to authenticated;
+grant execute on function public.user_has_warehouse(uuid, text) to authenticated;
+grant execute on function public.assert_active_user() to authenticated;
+grant execute on function public.assert_warehouse_permission(uuid, text) to authenticated;
+grant execute on function public.gen_doc_no(text) to authenticated;
 
 insert into public.departments(department_code, department_name, is_active) values
 ('PHARM','Pharmacy',true),

@@ -254,7 +254,16 @@ begin
     raise exception 'Issue destination department is required';
   end if;
 
-  select coalesce(nullif(p_requester_name,''), nullif(p.full_name,''), p.email::text, auth.uid()::text)
+  if not exists (
+    select 1 from public.departments d
+    where d.id = p_issue_to_department_id
+      and d.is_active = true
+      and upper(trim(d.department_code)) in ('OPD','IPD','CHEMO')
+  ) then
+    raise exception 'Invalid issue destination department. Please select OPD Pharmacy, IPD Pharmacy, or IV Chemo.';
+  end if;
+
+  select coalesce(nullif(p.full_name,''), p.email::text, auth.uid()::text)
   into v_requester_name
   from public.profiles p
   where p.id = auth.uid();

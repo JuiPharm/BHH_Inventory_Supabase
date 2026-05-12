@@ -1,4 +1,13 @@
 -- 03 views.sql
+-- Safe reset for views whose column names changed.
+-- PostgreSQL cannot CREATE OR REPLACE a view when an existing column name changes
+-- (for example id -> balance_id), so we drop dependent views first and recreate them.
+drop view if exists public.stock_movement_view cascade;
+drop view if exists public.inventory_valuation_view cascade;
+drop view if exists public.near_expiry_view cascade;
+drop view if exists public.low_stock_view cascade;
+drop view if exists public.current_stock_view cascade;
+
 create or replace view public.current_stock_view with (security_invoker = true) as
 select
   sb.id as balance_id,

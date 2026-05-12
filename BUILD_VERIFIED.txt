@@ -1,12 +1,29 @@
-BHH Inventory Netlify Complete v1.2 FIXED
+BHH Inventory Netlify Complete v1.2E
 
-Build verification performed in container before removing node_modules/dist:
+Patch focus:
+- Issue Stock destination dropdown dedupe/filter.
+- Requester recorded from authenticated login via RPC.
+- Database cleanup SQL for duplicate OPD/IPD/CHEMO department rows.
+
+Expected Issue Stock dropdown options:
+1. OPD Pharmacy
+2. IPD Pharmacy
+3. IV Chemo
+
+Files changed:
+- src/pages/IssuePage.tsx
+- supabase/functions.sql
+- supabase/hotfix_issue_dropdown_v1_2e.sql
+- FIX_NOTES_V1_2E.md
+
+Local verification performed:
 - npm install --ignore-scripts
 - npm run build
 
 Result:
-- Vite production build passed.
+- Build passed
+- Vite production build completed successfully
 
-Important deployment note:
-- package-lock.json is intentionally excluded because this environment writes internal registry URLs into lockfiles.
-- Netlify should install dependencies from package.json directly.
+Netlify settings:
+- Build command: npm run build
+- Publish directory: dist

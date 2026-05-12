@@ -1,9 +1,10 @@
--- BHH Inventory Netlify Hotfix v1.2
+-- BHH Inventory Netlify Hotfix v1.2b
 -- Fixes:
 -- 1) RPC schema mismatch: get_dashboard_summary(p_warehouse_id), calculate_reorder_recommendation(p_warehouse_id)
 -- 2) near_expiry_view.days_to_expiry missing
 -- 3) Issue destination departments: OPD Pharmacy, IPD Pharmacy, IV Chemo
 -- 4) Requester name defaults to current login profile/email
+-- 5) FIX: drop existing views before recreating them to avoid column rename error
 
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;

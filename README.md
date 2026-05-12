@@ -208,3 +208,14 @@ supabase/hotfix_netlify_v1_2.sql
 ```
 
 This hotfix recreates the dashboard/reorder RPC signatures, recreates `near_expiry_view` with `days_to_expiry`, seeds OPD Pharmacy/IPD Pharmacy/IV Chemo departments, and reloads the Supabase/PostgREST schema cache.
+
+
+## Important SQL Hotfix v1.2c
+
+If the deployed app shows missing RPC/helper errors, run:
+
+```txt
+supabase/hotfix_netlify_v1_2c.sql
+```
+
+This replaces v1.2b and includes required helper functions such as `is_admin()`, `user_has_warehouse()`, and `assert_active_user()` before recreating dashboard/reorder RPC functions.
