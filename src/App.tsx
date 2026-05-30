@@ -56,8 +56,21 @@ export default function App() {
   const { loading, session, profile, signOut } = useAuth()
   const { pushToast } = useToast()
   const { path, navigate } = useCurrentPath()
-  const current = useMemo(() => NAV.find(n => n.path === path) || NAV[0], [path])
-  const Page = current.page
+  
+  const currentRole = (profile?.roles as any)?.role_code
+  const isAdmin = currentRole === 'super_admin' || currentRole === 'inventory_manager'
+  
+  const navItems = useMemo(() => {
+    return NAV.filter(item => {
+      if (item.path === '/transfer' || item.path === '/admin') {
+        return isAdmin
+      }
+      return true
+    })
+  }, [isAdmin])
+
+  const current = useMemo(() => navItems.find(n => n.path === path) || navItems[0], [path, navItems])
+  const Page = current?.page || DashboardPage
 
   if (loading) return <div className="full-screen"><LoadingSpinner label="กำลังตรวจสอบ session..." /></div>
   if (!session) return <LoginPage />
@@ -71,10 +84,10 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">B</div><div><strong>BHH Inventory</strong><span>Hospital-grade system</span></div></div>
-        <nav>{NAV.map(item => { const Icon = item.icon; return <button key={item.path} className={item.path === current.path ? 'active' : ''} onClick={() => navigate(item.path)}><Icon size={18} />{item.label}</button> })}</nav>
+        <nav>{navItems.map(item => { const Icon = item.icon; return <button key={item.path} className={item.path === current?.path ? 'active' : ''} onClick={() => navigate(item.path)}><Icon size={18} />{item.label}</button> })}</nav>
       </aside>
       <main className="main-area">
-        <header className="topbar"><div><h1>{current.label}</h1><p>Supabase PostgreSQL · RLS · RPC · Audit Log</p></div><div className="topbar-actions"><WarehouseSelector /><div className="user-pill"><span>{profile?.full_name || profile?.email || 'User'}</span><small>{profile?.roles?.role_name || 'No role'}</small></div><button className="icon-btn" onClick={handleSignOut} title="Logout"><LogOut size={18} /></button></div></header>
+        <header className="topbar"><div><h1>{current?.label || 'BHH'}</h1><p>Supabase PostgreSQL · RLS · RPC · Audit Log</p></div><div className="topbar-actions"><WarehouseSelector /><div className="user-pill"><span>{profile?.full_name || profile?.email || 'User'}</span><small>{(profile?.roles as any)?.role_name || 'No role'}</small></div><button className="icon-btn" onClick={handleSignOut} title="Logout"><LogOut size={18} /></button></div></header>
         <section className="page-content"><Page /></section>
       </main>
     </div>
