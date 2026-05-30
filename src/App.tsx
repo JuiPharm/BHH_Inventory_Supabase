@@ -37,15 +37,17 @@ const NAV = [
 ]
 
 function useCurrentPath() {
-  const [path, setPath] = useState(window.location.pathname)
+  const getPath = () => window.location.hash.slice(1) || '/'
+  const [path, setPath] = useState(getPath())
+  
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname)
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
+    const onHashChange = () => setPath(getPath())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
+  
   const navigate = (next: string) => {
-    window.history.pushState({}, '', next)
-    setPath(next)
+    window.location.hash = next
   }
   return { path, navigate }
 }
