@@ -20,7 +20,8 @@ export function AdminPage() {
     password: '',
     full_name: '',
     role_code: '',
-    is_active: true
+    is_active: true,
+    warehouse_ids: [] as string[]
   })
 
   useEffect(() => { load() }, [])
@@ -29,7 +30,7 @@ export function AdminPage() {
     setLoading(true)
     try {
       const [p, w, r] = await Promise.all([
-        supabase.from('profiles').select('id,email,full_name,is_active,roles(role_code,role_name)').limit(100),
+        supabase.from('profiles').select('id,email,full_name,is_active,roles(role_code,role_name),user_warehouse_access(warehouse_id)').limit(100),
         supabase.from('warehouses').select('id,warehouse_code,warehouse_name,is_active').limit(100),
         supabase.from('roles').select('id,role_code,role_name').eq('is_active', true)
       ])
@@ -47,7 +48,7 @@ export function AdminPage() {
   }
 
   function openNewUser() {
-    setUserForm({ id: '', email: '', password: '', full_name: '', role_code: '', is_active: true })
+    setUserForm({ id: '', email: '', password: '', full_name: '', role_code: '', is_active: true, warehouse_ids: [] })
     setShowUserModal(true)
   }
 
@@ -58,9 +59,19 @@ export function AdminPage() {
       password: '',
       full_name: p.full_name || '',
       role_code: p.roles?.role_code || '',
-      is_active: p.is_active
+      is_active: p.is_active,
+      warehouse_ids: (p.user_warehouse_access || []).map((uwa: any) => uwa.warehouse_id)
     })
     setShowUserModal(true)
+  }
+
+  function toggleWarehouse(wid: string) {
+    setUserForm(prev => {
+      const ids = prev.warehouse_ids.includes(wid)
+        ? prev.warehouse_ids.filter(id => id !== wid)
+        : [...prev.warehouse_ids, wid]
+      return { ...prev, warehouse_ids: ids }
+    })
   }
 
   async function saveUser() {
@@ -70,6 +81,8 @@ export function AdminPage() {
     }
     setSavingUser(true)
     try {
+      let targetUserId = userForm.id
+
       if (userForm.id) {
         // Update user
         const { error } = await supabase.rpc('admin_update_user', {
@@ -79,7 +92,6 @@ export function AdminPage() {
           p_is_active: userForm.is_active
         })
         if (error) throw error
-        pushToast('อัปเดตผู้ใช้สำเร็จ', 'success')
       } else {
         // Create user
         if (!userForm.email || !userForm.password || userForm.password.length < 6) {
@@ -87,15 +99,31 @@ export function AdminPage() {
           setSavingUser(false)
           return
         }
-        const { error } = await supabase.rpc('admin_create_user', {
+        const { data, error } = await supabase.rpc('admin_create_user', {
           p_email: userForm.email,
           p_password: userForm.password,
           p_full_name: userForm.full_name,
           p_role_code: userForm.role_code
         })
         if (error) throw error
-        pushToast('สร้างผู้ใช้สำเร็จ', 'success')
+        targetUserId = data
       }
+
+      // Sync user warehouse access
+      if (targetUserId) {
+        await supabase.from('user_warehouse_access').delete().eq('user_id', targetUserId)
+        if (userForm.warehouse_ids.length > 0) {
+          const inserts = userForm.warehouse_ids.map(wid => ({
+            user_id: targetUserId,
+            warehouse_id: wid,
+            can_receive: true, can_issue: true, can_adjust: true, can_transfer: true
+          }))
+          const { error: insErr } = await supabase.from('user_warehouse_access').insert(inserts)
+          if (insErr) throw insErr
+        }
+      }
+
+      pushToast(userForm.id ? 'อัปเดตผู้ใช้สำเร็จ' : 'สร้างผู้ใช้สำเร็จ', 'success')
       setShowUserModal(false)
       load()
     } catch (e) {
@@ -119,6 +147,7 @@ export function AdminPage() {
             { key: 'email', header: 'Email', render: r => String(r.email || '') },
             { key: 'name', header: 'Name', render: r => String(r.full_name || '') },
             { key: 'role', header: 'Role', render: r => String((r.roles as any)?.role_name || '-') },
+            { key: 'access', header: 'Warehouses', render: r => <small>{(r.user_warehouse_access as any[])?.length || 0} คลัง</small> },
             { key: 'active', header: 'Status', render: r => <StatusBadge tone={Boolean(r.is_active) ? 'green' : 'gray'}>{Boolean(r.is_active) ? 'Active' : 'Inactive'}</StatusBadge> },
             { key: 'action', header: '', render: r => <button className="link-btn" onClick={() => openEditUser(r)}>Edit</button> }
           ]}
@@ -141,7 +170,7 @@ export function AdminPage() {
 
       {showUserModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ width: 400 }}>
+          <div className="modal-content" style={{ width: 480, maxHeight: '90vh', overflowY: 'auto' }}>
             <h3>{userForm.id ? 'Edit User' : 'Add New User'}</h3>
             <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
               <label>Email
@@ -169,6 +198,22 @@ export function AdminPage() {
                   Active Status
                 </label>
               )}
+              
+              <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                <label style={{ marginBottom: 8 }}>Warehouse Access</label>
+                <div style={{ display: 'grid', gap: 8, background: '#f5f8fc', padding: 12, borderRadius: 12 }}>
+                  {warehouses.map(w => (
+                    <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={userForm.warehouse_ids.includes(w.id)} 
+                        onChange={() => toggleWarehouse(w.id)} 
+                      />
+                      {w.warehouse_code} - {w.warehouse_name}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="panel-actions" style={{ marginTop: 24, justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn secondary" onClick={() => setShowUserModal(false)} disabled={savingUser}>Cancel</button>

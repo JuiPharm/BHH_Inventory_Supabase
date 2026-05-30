@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AsyncItemPicker } from '../components/AsyncItemPicker'
+import { BarcodeScannerInput } from '../components/BarcodeScannerInput'
+import { LotSelector } from '../components/LotSelector'
+import { PrintHeader } from '../components/PrintHeader'
 import { PrintButton } from '../components/PrintButton'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../state/AuthContext'
 import { useToast } from '../state/ToastContext'
-import { rpcIssueStock } from '../services/inventoryService'
+import { rpcIssueStock, rpcSearchItems } from '../services/inventoryService'
 import type { Department, IssueItemInput, ItemSearchResult } from '../types'
 import { readableError } from '../utils/errors'
+import { formatDateTime } from '../utils/format'
 
-type Line = IssueItemInput & { item?: ItemSearchResult | null }
+type Line = IssueItemInput & { item?: ItemSearchResult | null; lot_display?: string }
 
 const ISSUE_DESTINATIONS: Array<{ code: 'OPD' | 'IPD' | 'CHEMO'; name: string }> = [
   { code: 'OPD', name: 'OPD Pharmacy' },
@@ -42,8 +46,6 @@ function normalizeIssueDestinations(rows: Department[]) {
     const previous = byCode.get(matchedCode)
     const exactCodeMatch = normalizedCode === matchedCode
 
-    // Prefer the canonical row whose department_code is exactly OPD/IPD/CHEMO.
-    // This prevents duplicated names from legacy seed/hotfix data appearing in the dropdown.
     if (!previous || exactCodeMatch) {
       byCode.set(matchedCode, {
         ...row,
@@ -64,11 +66,17 @@ export function IssuePage() {
   const requester = useMemo(() => profile?.full_name || profile?.email || profile?.id || 'Current login user', [profile])
   const [departments, setDepartments] = useState<Department[]>([])
   const [loadingDepartments, setLoadingDepartments] = useState(false)
+  
   const [departmentId, setDepartmentId] = useState('')
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
-  const [line, setLine] = useState<Line>({ item_id: '', qty: 1, reason: '' })
+  const [scanning, setScanning] = useState(false)
+  
+  const [line, setLine] = useState<Line>({ item_id: '', lot_id: '', qty: 1, reason: '' })
   const [items, setItems] = useState<Line[]>([])
+  
+  // Receipt State
+  const [receiptData, setReceiptData] = useState<{ destName: string, remarks: string, items: Line[], date: string } | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -94,6 +102,25 @@ export function IssuePage() {
     return () => { mounted = false }
   }, [departmentId, pushToast])
 
+  async function handleScan(code: string) {
+    if (!code) return
+    setScanning(true)
+    try {
+      const res = await rpcSearchItems(code) as ItemSearchResult[]
+      if (res && res.length > 0) {
+        const item = res[0]
+        setLine({ ...line, item, item_id: item.id, lot_id: '' })
+        pushToast(`Scanned: ${item.item_code}`, 'info')
+      } else {
+        pushToast(`Barcode not found: ${code}`, 'warning')
+      }
+    } catch (e) {
+      pushToast(readableError(e), 'error')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   function addLine() {
     if (!line.item_id || line.qty <= 0) {
       pushToast('กรุณาเลือกรายการและใส่จำนวนให้ถูกต้อง', 'warning')
@@ -104,7 +131,7 @@ export function IssuePage() {
       return
     }
     setItems(prev => [...prev, line])
-    setLine({ item_id: '', qty: 1, reason: '' })
+    setLine({ item_id: '', lot_id: '', qty: 1, reason: '' })
   }
 
   async function save() {
@@ -125,12 +152,20 @@ export function IssuePage() {
       await rpcIssueStock({
         warehouse_id: selectedWarehouseId,
         issue_to_department_id: departmentId,
-        // Do not trust editable frontend text for requester. The RPC records auth.uid()/profile.
         requester_name: null,
         remarks,
-        items
+        items: items.map(it => ({
+          item_id: it.item_id,
+          lot_id: it.lot_id || null, // null lot_id will trigger FEFO in backend
+          qty: it.qty,
+          reason: it.reason
+        }))
       })
+      
+      const destName = departments.find(d => d.id === departmentId)?.department_name || 'Unknown'
+      
       pushToast('เบิก stock สำเร็จ', 'success')
+      setReceiptData({ destName, remarks, items, date: new Date().toISOString() })
       setItems([])
       setDepartmentId('')
       setRemarks('')
@@ -141,58 +176,107 @@ export function IssuePage() {
     }
   }
 
+  if (receiptData) {
+    return (
+      <div className="stack print-only-container">
+        <section className="panel" style={{ background: '#fff' }}>
+          <PrintHeader 
+            title="Issuing Slip" 
+            reference={`To: ${receiptData.destName}`} 
+            date={formatDateTime(receiptData.date)} 
+            user={requester} 
+          />
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Item Code</th>
+                <th>Description</th>
+                <th>Lot ID</th>
+                <th>Qty</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receiptData.items.map((it, idx) => (
+                <tr key={idx}>
+                  <td>{it.item?.item_code}</td>
+                  <td>{it.item?.item_name}</td>
+                  <td>{it.lot_id || 'FEFO (Auto)'}</td>
+                  <td>{it.qty}</td>
+                  <td>{it.reason || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="panel-actions no-print" style={{ marginTop: 24, justifyContent: 'center' }}>
+            <PrintButton />
+            <button className="btn secondary" onClick={() => setReceiptData(null)}>New Transaction</button>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="stack">
-      <section className="panel">
+      <section className="panel no-print">
         <h2>Issue Stock</h2>
         <div className="form-grid">
           <label>
             Issue to department
-            <select
-              value={departmentId}
-              onChange={e => setDepartmentId(e.target.value)}
-              disabled={loadingDepartments}
-            >
+            <select value={departmentId} onChange={e => setDepartmentId(e.target.value)} disabled={loadingDepartments}>
               <option value="">{loadingDepartments ? 'กำลังโหลดหน่วยงาน...' : 'เลือกหน่วยงานปลายทาง'}</option>
               {departments.map(d => <option key={d.department_code} value={d.id}>{d.department_name}</option>)}
             </select>
           </label>
           <label>
             Requester
-            <input value={requester} disabled title="Requester อ้างอิงจากผู้ Login ปัจจุบันและบันทึกจาก Supabase Auth" />
+            <input value={requester} disabled title="Requester อ้างอิงจากผู้ Login ปัจจุบัน" />
           </label>
-          <label>
+          <label className="span-2">
             Remarks
             <input value={remarks} onChange={e => setRemarks(e.target.value)} />
           </label>
         </div>
-        <div className="line-editor">
-          <AsyncItemPicker onSelect={item => setLine({ ...line, item, item_id: item.id })} />
-          <input type="number" min="0" step="0.01" value={line.qty} onChange={e => setLine({ ...line, qty: Number(e.target.value) })} />
+        
+        <div style={{ display: 'flex', gap: 16, marginTop: 16 }}>
+          <BarcodeScannerInput onScan={handleScan} loading={scanning} />
+        </div>
+
+        <div className="line-editor" style={{ gridTemplateColumns: 'minmax(260px, 2fr) 2fr 1fr 1fr auto', marginTop: 16 }}>
+          <AsyncItemPicker value={line.item} onSelect={item => setLine({ ...line, item, item_id: item.id, lot_id: '' })} />
+          <LotSelector 
+            itemId={line.item_id} 
+            warehouseId={selectedWarehouseId} 
+            value={line.lot_id || ''} 
+            onChange={lot_id => setLine({ ...line, lot_id })} 
+          />
+          <input type="number" min="0" step="0.01" placeholder="Qty" value={line.qty || ''} onChange={e => setLine({ ...line, qty: Number(e.target.value) })} />
           <input placeholder="Reason" value={line.reason || ''} onChange={e => setLine({ ...line, reason: e.target.value })} />
           <button className="btn secondary" onClick={addLine}>Add</button>
         </div>
-        <p className="hint">Dropdown แสดงเฉพาะ OPD Pharmacy, IPD Pharmacy และ IV Chemo โดยตัดรายการซ้ำอัตโนมัติ ส่วน Requester จะบันทึกจาก Supabase Auth Login ผ่าน RPC</p>
+        <p className="hint" style={{ marginTop: 8 }}>หากไม่ระบุ Lot ระบบจะจ่ายสินค้าแบบ <strong>FEFO</strong> (จ่าย Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
       </section>
 
-      <section className="panel">
+      <section className="panel no-print">
         <h2>รายการเบิก</h2>
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Item</th><th>Qty</th><th>Reason</th><th></th></tr></thead>
+            <thead><tr><th>Item</th><th>Lot</th><th>Qty</th><th>Reason</th><th></th></tr></thead>
             <tbody>
               {items.map((it, idx) => <tr key={idx}>
                 <td>{it.item?.item_code} {it.item?.item_name}</td>
+                <td>{it.lot_id ? `Lot ${it.lot_id.slice(0, 8)}...` : <span style={{ color: 'var(--blue)' }}>FEFO Auto</span>}</td>
                 <td>{it.qty}</td>
                 <td>{it.reason}</td>
                 <td><button className="link-btn" onClick={() => setItems(items.filter((_, i) => i !== idx))}>remove</button></td>
               </tr>)}
+              {items.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 20, color: 'var(--muted)' }}>No items added</td></tr>}
             </tbody>
           </table>
         </div>
         <div className="panel-actions">
-          <PrintButton />
-          <button className="btn" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Save Issue'}</button>
+          <button className="btn" disabled={saving || items.length === 0} onClick={save}>{saving ? 'Saving...' : 'Save Issue'}</button>
         </div>
       </section>
     </div>

@@ -62,7 +62,7 @@ export default function App() {
   
   const navItems = useMemo(() => {
     return NAV.filter(item => {
-      if (item.path === '/transfer' || item.path === '/admin') {
+      if (item.path === '/transfer' || item.path === '/admin' || item.path === '/adjustment') {
         return isAdmin
       }
       return true

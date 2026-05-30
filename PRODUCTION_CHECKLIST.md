@@ -14,9 +14,9 @@
 - [ ] All foreign keys are valid
 - [ ] Indexes exist for search/report columns
 - [ ] Dashboard queries are acceptable with production data volume
-- [ ] Backup plan exists
-- [ ] Restore test completed
-
+- [ ] **Automated Backups Setup:** Ensure Supabase PITR (Point-in-Time Recovery) is enabled for production projects.
+- [ ] **Manual Backups:** Set up a cron job to run `pg_dump -d "$DATABASE_URL" -Fc -f backup.dump` for off-site backup.
+- [ ] **Restore Test:** Successfully perform a full database restore in a staging environment.
 ## Workflow
 
 - [ ] Receive workflow approved by pharmacy/inventory team
