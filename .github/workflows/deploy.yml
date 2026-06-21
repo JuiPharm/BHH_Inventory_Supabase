@@ -28,13 +28,14 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build project
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_APP_NAME: BHH Inventory Management System
         run: npm run build
 
       - name: Create SPA fallback

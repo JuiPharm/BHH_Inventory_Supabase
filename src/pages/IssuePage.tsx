@@ -80,13 +80,16 @@ export function IssuePage() {
 
   useEffect(() => {
     let mounted = true
-    setLoadingDepartments(true)
-    supabase
-      .from('departments')
-      .select('id, department_code, department_name, is_active')
-      .eq('is_active', true)
-      .order('department_code', { ascending: true })
-      .then(({ data, error }) => {
+
+    async function loadDepartments() {
+      setLoadingDepartments(true)
+      try {
+        const { data, error } = await supabase
+          .from('departments')
+          .select('id, department_code, department_name, is_active')
+          .eq('is_active', true)
+          .order('department_code', { ascending: true })
+
         if (!mounted) return
         if (error) throw error
         const cleanDestinations = normalizeIssueDestinations((data || []) as Department[])
@@ -94,11 +97,14 @@ export function IssuePage() {
         if (departmentId && !cleanDestinations.some(d => d.id === departmentId)) {
           setDepartmentId('')
         }
-      })
-      .catch(error => pushToast(readableError(error), 'error'))
-      .finally(() => {
+      } catch (error) {
+        if (mounted) pushToast(readableError(error), 'error')
+      } finally {
         if (mounted) setLoadingDepartments(false)
-      })
+      }
+    }
+
+    loadDepartments()
     return () => { mounted = false }
   }, [departmentId, pushToast])
 
@@ -123,11 +129,11 @@ export function IssuePage() {
 
   function addLine() {
     if (!line.item_id || line.qty <= 0) {
-      pushToast('กรุณาเลือกรายการและใส่จำนวนให้ถูกต้อง', 'warning')
+      pushToast('à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸¥à¸°à¹ƒà¸ªà¹ˆà¸ˆà¸³à¸™à¸§à¸™à¹ƒà¸«à¹‰à¸–à¸¹à¸à¸•à¹‰à¸­à¸‡', 'warning')
       return
     }
     if ((line.item?.is_controlled || line.item?.is_high_alert) && !line.reason) {
-      pushToast('Controlled/High alert item ต้องระบุ reason', 'warning')
+      pushToast('Controlled/High alert item à¸•à¹‰à¸­à¸‡à¸£à¸°à¸šà¸¸ reason', 'warning')
       return
     }
     setItems(prev => [...prev, line])
@@ -136,15 +142,15 @@ export function IssuePage() {
 
   async function save() {
     if (!selectedWarehouseId) {
-      pushToast('กรุณาเลือกคลังต้นทาง', 'warning')
+      pushToast('à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¸„à¸¥à¸±à¸‡à¸•à¹‰à¸™à¸—à¸²à¸‡', 'warning')
       return
     }
     if (!departmentId) {
-      pushToast('กรุณาเลือกหน่วยงานปลายทาง เช่น OPD Pharmacy, IPD Pharmacy หรือ IV Chemo', 'warning')
+      pushToast('à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¸«à¸™à¹ˆà¸§à¸¢à¸‡à¸²à¸™à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡ à¹€à¸Šà¹ˆà¸™ OPD Pharmacy, IPD Pharmacy à¸«à¸£à¸·à¸­ IV Chemo', 'warning')
       return
     }
     if (!items.length) {
-      pushToast('กรุณาเพิ่มรายการเบิก', 'warning')
+      pushToast('à¸à¸£à¸¸à¸“à¸²à¹€à¸žà¸´à¹ˆà¸¡à¸£à¸²à¸¢à¸à¸²à¸£à¹€à¸šà¸´à¸', 'warning')
       return
     }
     setSaving(true)
@@ -164,7 +170,7 @@ export function IssuePage() {
       
       const destName = departments.find(d => d.id === departmentId)?.department_name || 'Unknown'
       
-      pushToast('เบิก stock สำเร็จ', 'success')
+      pushToast('à¹€à¸šà¸´à¸ stock à¸ªà¸³à¹€à¸£à¹‡à¸ˆ', 'success')
       setReceiptData({ destName, remarks, items, date: new Date().toISOString() })
       setItems([])
       setDepartmentId('')
@@ -225,13 +231,13 @@ export function IssuePage() {
           <label>
             Issue to department
             <select value={departmentId} onChange={e => setDepartmentId(e.target.value)} disabled={loadingDepartments}>
-              <option value="">{loadingDepartments ? 'กำลังโหลดหน่วยงาน...' : 'เลือกหน่วยงานปลายทาง'}</option>
+              <option value="">{loadingDepartments ? 'à¸à¸³à¸¥à¸±à¸‡à¹‚à¸«à¸¥à¸”à¸«à¸™à¹ˆà¸§à¸¢à¸‡à¸²à¸™...' : 'à¹€à¸¥à¸·à¸­à¸à¸«à¸™à¹ˆà¸§à¸¢à¸‡à¸²à¸™à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡'}</option>
               {departments.map(d => <option key={d.department_code} value={d.id}>{d.department_name}</option>)}
             </select>
           </label>
           <label>
             Requester
-            <input value={requester} disabled title="Requester อ้างอิงจากผู้ Login ปัจจุบัน" />
+            <input value={requester} disabled title="Requester à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¸ˆà¸²à¸à¸œà¸¹à¹‰ Login à¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™" />
           </label>
           <label className="span-2">
             Remarks
@@ -255,11 +261,11 @@ export function IssuePage() {
           <input placeholder="Reason" value={line.reason || ''} onChange={e => setLine({ ...line, reason: e.target.value })} />
           <button className="btn secondary" onClick={addLine}>Add</button>
         </div>
-        <p className="hint" style={{ marginTop: 8 }}>หากไม่ระบุ Lot ระบบจะจ่ายสินค้าแบบ <strong>FEFO</strong> (จ่าย Lot ที่หมดอายุก่อนอัตโนมัติ)</p>
+        <p className="hint" style={{ marginTop: 8 }}>à¸«à¸²à¸à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸ Lot à¸£à¸°à¸šà¸šà¸ˆà¸°à¸ˆà¹ˆà¸²à¸¢à¸ªà¸´à¸™à¸„à¹‰à¸²à¹à¸šà¸š <strong>FEFO</strong> (à¸ˆà¹ˆà¸²à¸¢ Lot à¸—à¸µà¹ˆà¸«à¸¡à¸”à¸­à¸²à¸¢à¸¸à¸à¹ˆà¸­à¸™à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´)</p>
       </section>
 
       <section className="panel no-print">
-        <h2>รายการเบิก</h2>
+        <h2>à¸£à¸²à¸¢à¸à¸²à¸£à¹€à¸šà¸´à¸</h2>
         <div className="table-wrap">
           <table className="data-table">
             <thead><tr><th>Item</th><th>Lot</th><th>Qty</th><th>Reason</th><th></th></tr></thead>

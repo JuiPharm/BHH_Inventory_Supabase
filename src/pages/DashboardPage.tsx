@@ -78,27 +78,27 @@ export function DashboardPage() {
 
       <div className="grid two">
         <section className="panel" style={{ borderTop: '4px solid var(--red)' }}>
-          <h2 style={{ color: 'var(--red)' }}>🚨 Critical Low Stock</h2>
+          <h2 style={{ color: 'var(--red)' }}>Critical Low Stock</h2>
           <DataTable 
             rows={lowStockList} 
             columns={[
               { key: 'item', header: 'Item', render: r => String(r.item_name || '-') },
               { key: 'avail', header: 'Available', render: r => <strong style={{ color: 'var(--red)' }}>{formatNumber(Number(r.qty_available))}</strong> },
-              { key: 'min', header: 'Min Level', render: r => formatNumber(Number(r.min_level)) }
+              { key: 'status', header: 'Status', render: r => String(r.stock_status || '-') }
             ]} 
           />
           {lowStockList.length === 0 && <p className="hint">No low stock items</p>}
         </section>
 
         <section className="panel" style={{ borderTop: '4px solid var(--amber)' }}>
-          <h2 style={{ color: 'var(--amber)' }}>⚠️ Near Expiry Lots</h2>
+          <h2 style={{ color: 'var(--amber)' }}>Near Expiry Lots</h2>
           <DataTable 
             rows={nearExpiryList} 
             columns={[
               { key: 'item', header: 'Item', render: r => String(r.item_name || '-') },
               { key: 'lot', header: 'Lot ID', render: r => String(r.lot_id || '-') },
               { key: 'exp', header: 'Expiry', render: r => <span style={{ color: 'var(--amber)', fontWeight: 'bold' }}>{formatDateTime(String(r.expiry_date || '')).slice(0, 10)}</span> },
-              { key: 'qty', header: 'Qty', render: r => formatNumber(Number(r.qty_on_hand)) }
+              { key: 'qty', header: 'Qty', render: r => formatNumber(Number(r.qty_available || 0)) }
             ]} 
           />
           {nearExpiryList.length === 0 && <p className="hint">No near expiry lots</p>}
@@ -128,10 +128,10 @@ export function DashboardPage() {
           <DataTable 
             rows={recent} 
             columns={[
-              {key:'performed_at', header:'เวลา', render:r=>formatDateTime(String(r.performed_at || ''))},
-              {key:'type', header:'ประเภท', render:r=>String(r.transaction_type || '-')},
-              {key:'item', header:'รายการ', render:r=>String(r.item_name || '-')},
-              {key:'qty', header:'จำนวน', render:r=>formatNumber(Number(r.qty_in || 0) - Number(r.qty_out || 0))}
+              {key:'performed_at', header:'à¹€à¸§à¸¥à¸²', render:r=>formatDateTime(String(r.performed_at || ''))},
+              {key:'type', header:'à¸›à¸£à¸°à¹€à¸ à¸—', render:r=>String(r.transaction_type || '-')},
+              {key:'item', header:'à¸£à¸²à¸¢à¸à¸²à¸£', render:r=>String(r.item_name || '-')},
+              {key:'qty', header:'à¸ˆà¸³à¸™à¸§à¸™', render:r=>formatNumber(Number(r.qty_in || 0) - Number(r.qty_out || 0))}
             ]} 
           />
         </section>

@@ -1,16 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Mail, Save } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { DataTable } from '../components/DataTable'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../state/ToastContext'
 import { readableError } from '../utils/errors'
 
+type ProfileRow = Record<string, any>
+type WarehouseRow = Record<string, any>
+type RoleRow = Record<string, any>
+
+const NOTIFICATION_EMAIL_KEY = 'notification_emails'
+
+function parseEmailList(value: string) {
+  return value
+    .split(/[\n,;]/)
+    .map(email => email.trim())
+    .filter(Boolean)
+}
+
+function hasInvalidEmails(emails: string[]) {
+  return emails.some(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+}
+
 export function AdminPage() {
   const { pushToast } = useToast()
-  const [profiles, setProfiles] = useState<Record<string, any>[]>([])
-  const [warehouses, setWarehouses] = useState<Record<string, any>[]>([])
-  const [roles, setRoles] = useState<Record<string, any>[]>([])
+  const [profiles, setProfiles] = useState<ProfileRow[]>([])
+  const [warehouses, setWarehouses] = useState<WarehouseRow[]>([])
+  const [roles, setRoles] = useState<RoleRow[]>([])
   const [loading, setLoading] = useState(false)
+
+  const [notificationEmails, setNotificationEmails] = useState('')
+  const [savingEmails, setSavingEmails] = useState(false)
 
   const [showUserModal, setShowUserModal] = useState(false)
   const [savingUser, setSavingUser] = useState(false)
@@ -24,22 +45,32 @@ export function AdminPage() {
     warehouse_ids: [] as string[]
   })
 
+  const emailCount = useMemo(() => parseEmailList(notificationEmails).length, [notificationEmails])
+
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
     try {
-      const [p, w, r] = await Promise.all([
+      const [p, w, r, settings] = await Promise.all([
         supabase.from('profiles').select('id,email,full_name,is_active,roles(role_code,role_name),user_warehouse_access(warehouse_id)').limit(100),
         supabase.from('warehouses').select('id,warehouse_code,warehouse_name,is_active').limit(100),
-        supabase.from('roles').select('id,role_code,role_name').eq('is_active', true)
+        supabase.from('roles').select('id,role_code,role_name').eq('is_active', true),
+        supabase.from('app_settings').select('value').eq('key', NOTIFICATION_EMAIL_KEY).maybeSingle()
       ])
       if (p.error) throw p.error
       if (w.error) throw w.error
       if (r.error) throw r.error
+      if (settings.error) throw settings.error
+
       setProfiles(p.data || [])
       setWarehouses(w.data || [])
       setRoles(r.data || [])
+
+      const recipients = Array.isArray((settings.data?.value as any)?.recipients)
+        ? (settings.data?.value as any).recipients
+        : []
+      setNotificationEmails(recipients.join('\n'))
     } catch (e) {
       pushToast(readableError(e), 'error')
     } finally {
@@ -52,7 +83,7 @@ export function AdminPage() {
     setShowUserModal(true)
   }
 
-  function openEditUser(p: any) {
+  function openEditUser(p: ProfileRow) {
     setUserForm({
       id: p.id,
       email: p.email,
@@ -74,9 +105,36 @@ export function AdminPage() {
     })
   }
 
+  async function saveNotificationEmails() {
+    const recipients = parseEmailList(notificationEmails)
+    if (hasInvalidEmails(recipients)) {
+      pushToast('Please check notification email format.', 'warning')
+      return
+    }
+
+    setSavingEmails(true)
+    try {
+      const { error } = await supabase.from('app_settings').upsert({
+        key: NOTIFICATION_EMAIL_KEY,
+        value: {
+          recipients,
+          channels: ['low_stock', 'near_expiry', 'movement_exception'],
+          updated_from: 'admin_web'
+        },
+        description: 'Email recipients for inventory notifications'
+      })
+      if (error) throw error
+      pushToast('Notification emails saved.', 'success')
+    } catch (e) {
+      pushToast(readableError(e), 'error')
+    } finally {
+      setSavingEmails(false)
+    }
+  }
+
   async function saveUser() {
     if (!userForm.full_name || !userForm.role_code) {
-      pushToast('กรุณากรอกข้อมูลให้ครบถ้วน (ชื่อ, สิทธิ์)', 'warning')
+      pushToast('Please complete full name and role.', 'warning')
       return
     }
     setSavingUser(true)
@@ -84,7 +142,6 @@ export function AdminPage() {
       let targetUserId = userForm.id
 
       if (userForm.id) {
-        // Update user
         const { error } = await supabase.rpc('admin_update_user', {
           p_user_id: userForm.id,
           p_full_name: userForm.full_name,
@@ -93,9 +150,8 @@ export function AdminPage() {
         })
         if (error) throw error
       } else {
-        // Create user
         if (!userForm.email || !userForm.password || userForm.password.length < 6) {
-          pushToast('กรุณากรอก Email และ Password (ขั้นต่ำ 6 ตัวอักษร) สำหรับผู้ใช้ใหม่', 'warning')
+          pushToast('Please enter email and a password of at least 6 characters.', 'warning')
           setSavingUser(false)
           return
         }
@@ -109,21 +165,23 @@ export function AdminPage() {
         targetUserId = data
       }
 
-      // Sync user warehouse access
       if (targetUserId) {
         await supabase.from('user_warehouse_access').delete().eq('user_id', targetUserId)
         if (userForm.warehouse_ids.length > 0) {
           const inserts = userForm.warehouse_ids.map(wid => ({
             user_id: targetUserId,
             warehouse_id: wid,
-            can_receive: true, can_issue: true, can_adjust: true, can_transfer: true
+            can_receive: true,
+            can_issue: true,
+            can_adjust: true,
+            can_transfer: true
           }))
           const { error: insErr } = await supabase.from('user_warehouse_access').insert(inserts)
           if (insErr) throw insErr
         }
       }
 
-      pushToast(userForm.id ? 'อัปเดตผู้ใช้สำเร็จ' : 'สร้างผู้ใช้สำเร็จ', 'success')
+      pushToast(userForm.id ? 'User updated.' : 'User created.', 'success')
       setShowUserModal(false)
       load()
     } catch (e) {
@@ -134,45 +192,73 @@ export function AdminPage() {
   }
 
   return (
-    <div className="grid two">
-      <section className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Users / Profiles</h2>
-          <button className="btn" onClick={openNewUser}>+ Add User</button>
-        </div>
-        <DataTable
-          loading={loading}
-          rows={profiles}
-          columns={[
-            { key: 'email', header: 'Email', render: r => String(r.email || '') },
-            { key: 'name', header: 'Name', render: r => String(r.full_name || '') },
-            { key: 'role', header: 'Role', render: r => String((r.roles as any)?.role_name || '-') },
-            { key: 'access', header: 'Warehouses', render: r => <small>{(r.user_warehouse_access as any[])?.length || 0} คลัง</small> },
-            { key: 'active', header: 'Status', render: r => <StatusBadge tone={Boolean(r.is_active) ? 'green' : 'gray'}>{Boolean(r.is_active) ? 'Active' : 'Inactive'}</StatusBadge> },
-            { key: 'action', header: '', render: r => <button className="link-btn" onClick={() => openEditUser(r)}>Edit</button> }
-          ]}
-        />
-      </section>
+    <div className="stack">
+      <div className="grid two">
+        <section className="panel">
+          <div className="section-head">
+            <div>
+              <h2>Users / Profiles</h2>
+              <p className="hint">Manage application users, roles, and warehouse access.</p>
+            </div>
+            <button className="btn" onClick={openNewUser}>+ Add User</button>
+          </div>
+          <DataTable
+            loading={loading}
+            rows={profiles}
+            columns={[
+              { key: 'email', header: 'Email', render: r => String(r.email || '') },
+              { key: 'name', header: 'Name', render: r => String(r.full_name || '') },
+              { key: 'role', header: 'Role', render: r => String((r.roles as any)?.role_name || '-') },
+              { key: 'access', header: 'Warehouses', render: r => <small>{(r.user_warehouse_access as any[])?.length || 0} warehouses</small> },
+              { key: 'active', header: 'Status', render: r => <StatusBadge tone={Boolean(r.is_active) ? 'green' : 'gray'}>{Boolean(r.is_active) ? 'Active' : 'Inactive'}</StatusBadge> },
+              { key: 'action', header: '', render: r => <button className="link-btn" onClick={() => openEditUser(r)}>Edit</button> }
+            ]}
+          />
+        </section>
 
-      <section className="panel">
-        <h2>Warehouses</h2>
-        <DataTable
-          loading={loading}
-          rows={warehouses}
-          columns={[
-            { key: 'code', header: 'Code', render: r => <strong>{String(r.warehouse_code || '')}</strong> },
-            { key: 'name', header: 'Name', render: r => String(r.warehouse_name || '') },
-            { key: 'active', header: 'Status', render: r => <StatusBadge tone={Boolean(r.is_active) ? 'green' : 'gray'}>{Boolean(r.is_active) ? 'Active' : 'Inactive'}</StatusBadge> }
-          ]}
-        />
-        <p className="hint">Master data คลังและอื่นๆ จัดการผ่าน Supabase SQL เพื่อความปลอดภัย</p>
+        <section className="panel">
+          <h2>Warehouses</h2>
+          <DataTable
+            loading={loading}
+            rows={warehouses}
+            columns={[
+              { key: 'code', header: 'Code', render: r => <strong>{String(r.warehouse_code || '')}</strong> },
+              { key: 'name', header: 'Name', render: r => String(r.warehouse_name || '') },
+              { key: 'active', header: 'Status', render: r => <StatusBadge tone={Boolean(r.is_active) ? 'green' : 'gray'}>{Boolean(r.is_active) ? 'Active' : 'Inactive'}</StatusBadge> }
+            ]}
+          />
+          <p className="hint">Warehouse master data is still controlled by Supabase SQL for production safety.</p>
+        </section>
+      </div>
+
+      <section className="panel notification-panel">
+        <div className="section-head">
+          <div>
+            <h2><Mail size={20} /> Notification Emails</h2>
+            <p className="hint">Recipients used by notification jobs for low stock, near expiry, and exception alerts.</p>
+          </div>
+          <StatusBadge tone={emailCount > 0 ? 'blue' : 'gray'}>{String(emailCount) + ' recipients'}</StatusBadge>
+        </div>
+        <label>
+          Email recipients
+          <textarea
+            rows={5}
+            value={notificationEmails}
+            onChange={e => setNotificationEmails(e.target.value)}
+            placeholder="pharmacy@example.com&#10;inventory.manager@example.com"
+          />
+        </label>
+        <p className="hint">Enter one email per line, or separate multiple emails with commas/semicolons.</p>
+        <div className="panel-actions">
+          <button className="btn" onClick={saveNotificationEmails} disabled={savingEmails}><Save size={16} />{savingEmails ? 'Saving...' : 'Save Notification Emails'}</button>
+        </div>
       </section>
 
       {showUserModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: 480, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="modal-backdrop">
+          <div className="modal-card user-modal">
             <h3>{userForm.id ? 'Edit User' : 'Add New User'}</h3>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="form-grid single">
               <label>Email
                 <input type="email" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} disabled={!!userForm.id} />
               </label>
@@ -186,36 +272,27 @@ export function AdminPage() {
               </label>
               <label>Role
                 <select value={userForm.role_code} onChange={e => setUserForm({ ...userForm, role_code: e.target.value })}>
-                  <option value="">-- เลือกสิทธิ์ --</option>
-                  {roles.map(r => (
-                    <option key={r.id} value={r.role_code}>{r.role_name}</option>
-                  ))}
+                  <option value="">-- Select role --</option>
+                  {roles.map(r => <option key={r.id} value={r.role_code}>{r.role_name}</option>)}
                 </select>
               </label>
               {userForm.id && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <label className="check-row">
                   <input type="checkbox" checked={userForm.is_active} onChange={e => setUserForm({ ...userForm, is_active: e.target.checked })} />
                   Active Status
                 </label>
               )}
-              
-              <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                <label style={{ marginBottom: 8 }}>Warehouse Access</label>
-                <div style={{ display: 'grid', gap: 8, background: '#f5f8fc', padding: 12, borderRadius: 12 }}>
-                  {warehouses.map(w => (
-                    <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={userForm.warehouse_ids.includes(w.id)} 
-                        onChange={() => toggleWarehouse(w.id)} 
-                      />
-                      {w.warehouse_code} - {w.warehouse_name}
-                    </label>
-                  ))}
-                </div>
+              <div className="warehouse-checklist">
+                <label>Warehouse Access</label>
+                {warehouses.map(w => (
+                  <label key={w.id} className="check-row">
+                    <input type="checkbox" checked={userForm.warehouse_ids.includes(w.id)} onChange={() => toggleWarehouse(w.id)} />
+                    {w.warehouse_code} - {w.warehouse_name}
+                  </label>
+                ))}
               </div>
             </div>
-            <div className="panel-actions" style={{ marginTop: 24, justifyContent: 'flex-end', gap: 8 }}>
+            <div className="panel-actions">
               <button className="btn secondary" onClick={() => setShowUserModal(false)} disabled={savingUser}>Cancel</button>
               <button className="btn" onClick={saveUser} disabled={savingUser}>{savingUser ? 'Saving...' : 'Save User'}</button>
             </div>

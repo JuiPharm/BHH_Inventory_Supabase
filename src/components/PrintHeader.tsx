@@ -1,9 +1,9 @@
 interface Props {
   title: string
-  reference?: string
-  date?: string
-  warehouse?: string
-  user?: string
+  reference?: string | null
+  date?: string | null
+  warehouse?: string | null
+  user?: string | null
 }
 
 export function PrintHeader({ title, reference, date, warehouse, user }: Props) {

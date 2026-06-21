@@ -10,3 +10,26 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+interface BarcodeDetectorOptions {
+  formats?: string[]
+}
+
+interface DetectedBarcode {
+  rawValue: string
+  format?: string
+  boundingBox?: DOMRectReadOnly
+}
+
+interface BarcodeDetector {
+  detect(image: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | ImageBitmap): Promise<DetectedBarcode[]>
+}
+
+interface BarcodeDetectorConstructor {
+  new(options?: BarcodeDetectorOptions): BarcodeDetector
+  getSupportedFormats?: () => Promise<string[]>
+}
+
+interface Window {
+  BarcodeDetector?: BarcodeDetectorConstructor
+}

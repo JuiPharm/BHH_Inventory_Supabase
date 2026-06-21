@@ -39,13 +39,13 @@ const NAV = [
 function useCurrentPath() {
   const getPath = () => window.location.hash.slice(1) || '/'
   const [path, setPath] = useState(getPath())
-  
+
   useEffect(() => {
     const onHashChange = () => setPath(getPath())
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
-  
+
   const navigate = (next: string) => {
     window.location.hash = next
   }
@@ -56,10 +56,11 @@ export default function App() {
   const { loading, session, profile, signOut } = useAuth()
   const { pushToast } = useToast()
   const { path, navigate } = useCurrentPath()
-  
+  const logoSrc = `${import.meta.env.BASE_URL}bdms-bhh-logo.svg`
+
   const currentRole = (profile?.roles as any)?.role_code
   const isAdmin = currentRole === 'super_admin' || currentRole === 'inventory_manager'
-  
+
   const navItems = useMemo(() => {
     return NAV.filter(item => {
       if (item.path === '/transfer' || item.path === '/admin' || item.path === '/adjustment') {
@@ -71,10 +72,11 @@ export default function App() {
 
   const current = useMemo(() => navItems.find(n => n.path === path) || navItems[0], [path, navItems])
   const Page = current?.page || DashboardPage
+  const mobileNavItems = navItems.filter(item => ['/', '/stock', '/receive', '/issue', '/reports'].includes(item.path)).slice(0, 5)
 
-  if (loading) return <div className="full-screen"><LoadingSpinner label="กำลังตรวจสอบ session..." /></div>
+  if (loading) return <div className="full-screen"><LoadingSpinner label="Checking secure session..." /></div>
   if (!session) return <LoginPage />
-  if (profile && !profile.is_active) return <div className="full-screen error-panel"><h1>บัญชีถูกปิดใช้งาน</h1><p>กรุณาติดต่อผู้ดูแลระบบ</p><button className="btn" onClick={() => signOut()}>ออกจากระบบ</button></div>
+  if (profile && !profile.is_active) return <div className="full-screen error-panel"><h1>Account disabled</h1><p>Please contact the system administrator.</p><button className="btn" onClick={() => signOut()}>Sign out</button></div>
 
   async function handleSignOut() {
     try { await signOut() } catch (error) { pushToast(readableError(error), 'error') }
@@ -83,13 +85,21 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">B</div><div><strong>BHH Inventory</strong><span>Hospital-grade system</span></div></div>
+        <div className="brand">
+          <img className="brand-logo" src={logoSrc} alt="Bangkok Hospital Hat Yai" />
+        </div>
         <nav>{navItems.map(item => { const Icon = item.icon; return <button key={item.path} className={item.path === current?.path ? 'active' : ''} onClick={() => navigate(item.path)}><Icon size={18} />{item.label}</button> })}</nav>
       </aside>
       <main className="main-area">
-        <header className="topbar"><div><h1>{current?.label || 'BHH'}</h1><p>Supabase PostgreSQL · RLS · RPC · Audit Log</p></div><div className="topbar-actions"><WarehouseSelector /><div className="user-pill"><span>{profile?.full_name || profile?.email || 'User'}</span><small>{(profile?.roles as any)?.role_name || 'No role'}</small></div><button className="icon-btn" onClick={handleSignOut} title="Logout"><LogOut size={18} /></button></div></header>
+        <header className="topbar">
+          <div className="topbar-title"><h1>{current?.label || 'BHH Inventory'}</h1><p>Bangkok Hospital Hat Yai · Supabase RLS · GitHub Pages</p></div>
+          <div className="topbar-actions"><WarehouseSelector /><div className="user-pill"><span>{profile?.full_name || profile?.email || 'User'}</span><small>{(profile?.roles as any)?.role_name || 'No role'}</small></div><button className="icon-btn" onClick={handleSignOut} title="Logout"><LogOut size={18} /></button></div>
+        </header>
         <section className="page-content"><Page /></section>
       </main>
+      <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
+        {mobileNavItems.map(item => { const Icon = item.icon; return <button key={item.path} className={item.path === current?.path ? 'active' : ''} onClick={() => navigate(item.path)}><Icon size={22} /><span>{item.label.replace(' Stock', '')}</span></button> })}
+      </nav>
     </div>
   )
 }
