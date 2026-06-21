@@ -56,7 +56,7 @@ export default function App() {
   const { loading, session, profile, signOut } = useAuth()
   const { pushToast } = useToast()
   const { path, navigate } = useCurrentPath()
-  const logoSrc = `${import.meta.env.BASE_URL}bdms-bhh-logo.svg`
+  const logoSrc = `${import.meta.env.BASE_URL}bangkok-hospital-hatyai-logo.jpg`
 
   const currentRole = (profile?.roles as any)?.role_code
   const isAdmin = currentRole === 'super_admin' || currentRole === 'inventory_manager'
@@ -92,7 +92,7 @@ export default function App() {
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-title"><h1>{current?.label || 'BHH Inventory'}</h1><p>Bangkok Hospital Hat Yai · Supabase RLS · GitHub Pages</p></div>
+          <div className="topbar-title"><h1>{current?.label || 'BHH Inventory'}</h1><p>Bangkok Hospital Hat Yai Â· Supabase RLS Â· GitHub Pages</p></div>
           <div className="topbar-actions"><WarehouseSelector /><div className="user-pill"><span>{profile?.full_name || profile?.email || 'User'}</span><small>{(profile?.roles as any)?.role_name || 'No role'}</small></div><button className="icon-btn" onClick={handleSignOut} title="Logout"><LogOut size={18} /></button></div>
         </header>
         <section className="page-content"><Page /></section>

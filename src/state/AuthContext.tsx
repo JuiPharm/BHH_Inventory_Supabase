@@ -29,6 +29,13 @@ async function loadProfile(userId: string) {
   return data as Profile | null
 }
 
+function getPasswordResetRedirectUrl() {
+  const basePath = import.meta.env.BASE_URL || '/'
+  const baseUrl = new URL(basePath, window.location.origin)
+  baseUrl.searchParams.set('auth_action', 'reset_password')
+  return baseUrl.toString()
+}
+
 async function loadWarehouses() {
   const { data, error } = await supabase
     .from('warehouses')
@@ -107,9 +114,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reloadProfile()
     },
     async resetPassword(email: string) {
-      const redirectTo = `${window.location.origin}/reset-password`
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
-      if (error) throw error
+      const redirectTo = getPasswordResetRedirectUrl()
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+        if (error) throw error
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || '')
+        if (message.toLowerCase().includes('failed to fetch')) {
+          console.error('Supabase password reset failed', { redirectTo, error })
+          throw new Error(`Cannot reach Supabase Auth for password reset. Please confirm network access, VITE_SUPABASE_URL, and Supabase Auth redirect allowlist includes: ${redirectTo}`)
+        }
+        throw error
+      }
     },
     async signOut() {
       const { error } = await supabase.auth.signOut()

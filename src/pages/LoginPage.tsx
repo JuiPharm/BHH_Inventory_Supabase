@@ -10,7 +10,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const logoSrc = `${import.meta.env.BASE_URL}bdms-bhh-logo.svg`
+  const logoSrc = `${import.meta.env.BASE_URL}bangkok-hospital-hatyai-logo.jpg`
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -40,7 +40,7 @@ export function LoginPage() {
           <img className="login-logo" src={logoSrc} alt="Bangkok Hospital Hat Yai" />
           <h1>BHH Inventory Management System</h1>
           <p>Hospital inventory operations for stock balance, receiving, issuing, transfer, expiry monitoring, and audit-ready movement history.</p>
-          <div className="login-status-pill">Production ready · GitHub Pages frontend · Supabase backend</div>
+          <div className="login-status-pill">Production ready Â· GitHub Pages frontend Â· Supabase backend</div>
         </div>
         <form onSubmit={submit} className="login-form">
           <label><span>Email</span><div className="input-icon"><Mail size={18}/><input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></div></label>
